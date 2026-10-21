@@ -1,0 +1,49 @@
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  cursor: crosshair;
+  user-select: none;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+#surface {
+  position: fixed;
+  inset: 0;
+  /* A canvas is a replaced element: inset alone leaves its intrinsic (DPR-sized)
+     bitmap size, which then scales the drawing by devicePixelRatio. */
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+
+#hint {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(12, 16, 24, 0.82);
+  color: #eef2f7;
+  border: 1px solid rgba(200, 170, 110, 0.55);
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+#size {
+  position: fixed;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: rgba(12, 16, 24, 0.88);
+  color: #f4e2b8;
+  border: 1px solid rgba(200, 170, 110, 0.7);
+  font-size: 12px;
+  line-height: 1.2;
+  pointer-events: none;
+}

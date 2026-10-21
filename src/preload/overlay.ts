@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { EmoteRef } from '../shared/emotes';
 import {
-  AGENT_PING_ENDED, OVERLAY_ASSETS, OVERLAY_CHANNELS, OVERLAY_EMOTED, OVERLAY_PINGED, type OverlayChannel, type OverlayEvents,
+  AGENT_PING_ENDED, OVERLAY_ASSETS, OVERLAY_CHANNELS, OVERLAY_EMOTED, OVERLAY_PINGED,
+  REGION_CANCEL, REGION_DONE, REGION_INIT,
+  type OverlayChannel, type OverlayEvents, type RegionEditorApi, type RegionInit, type RegionRect,
 } from '../shared/ipc';
 import type { PingId } from '../shared/pings';
 
@@ -25,5 +27,20 @@ const api = {
 };
 
 contextBridge.exposeInMainWorld('overlay', api);
+
+// The region editor reuses this preload: adding a fourth preload entry made
+// Rollup emit a shared chunk that Electron's sandboxed preload cannot require.
+const regionApi: RegionEditorApi = {
+  onInit(cb: (init: RegionInit) => void): void {
+    ipcRenderer.on(REGION_INIT, (_event, init: RegionInit) => cb(init));
+  },
+  done(rect: RegionRect): void {
+    ipcRenderer.send(REGION_DONE, rect);
+  },
+  cancel(): void {
+    ipcRenderer.send(REGION_CANCEL);
+  },
+};
+contextBridge.exposeInMainWorld('regionEditor', regionApi);
 
 export type OverlayApi = typeof api;

@@ -11,6 +11,32 @@ export interface Point {
   y: number;
 }
 
+/** A rectangle in global logical (DIP) coordinates or overlay-local CSS pixels. */
+export interface RegionRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface RegionInit {
+  display: RegionRect;
+  minSize: number;
+}
+
+/** main → region-editor renderer: initialize the selection surface. */
+export const REGION_INIT = 'region:init';
+/** region-editor renderer → main: confirmed rectangle in overlay-local CSS pixels. */
+export const REGION_DONE = 'region:done';
+/** region-editor renderer → main: the user cancelled, no screenshot should be taken. */
+export const REGION_CANCEL = 'region:cancel';
+
+export interface RegionEditorApi {
+  onInit(cb: (init: RegionInit) => void): void;
+  done(rect: RegionRect): void;
+  cancel(): void;
+}
+
 /** The name tag under a room member's ping. `color` indexes TAG_COLORS. */
 export interface PingTag {
   name: string;

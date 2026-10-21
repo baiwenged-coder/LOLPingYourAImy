@@ -8,6 +8,7 @@ import { mkdir, copyFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { OverlayManager } from './overlayManager';
+import { RegionEditor } from './regionEditor';
 import type { EmoteLibrary } from './emoteLibrary';
 import type { SettingsStore } from './settingsStore';
 import { settingsDir } from './paths';
@@ -24,7 +25,8 @@ export async function startTeammate(overlays: OverlayManager, library: EmoteLibr
   const store = new Store(settingsDir());
   const helper = app.isPackaged ? join(process.resourcesPath, process.platform === 'darwin' ? 'desktop-helper' : 'desktop-helper.exe') : join(root, 'native/desktop/build', process.platform === 'darwin' ? 'desktop-helper' : 'desktop-helper.exe');
   let companion: CompanionWindow | undefined;
-  const desktop = new Desktop({ electron, helper, withoutCompanion: (fn: () => Promise<any>) => companion ? companion.withoutInputObstruction(fn) : fn(), dataDir: settingsDir(), overlays: { spawnAgent: (p: any) => overlays.spawnAgent(p), captureWithoutOverlays: (fn: () => Promise<any>) => companion ? companion.withoutWindow(() => overlays.captureWithoutOverlays(fn)) : overlays.captureWithoutOverlays(fn) }, pingIds: reverse });
+  const regionEditor = new RegionEditor();
+  const desktop = new Desktop({ electron, helper, withoutCompanion: (fn: () => Promise<any>) => companion ? companion.withoutInputObstruction(fn) : fn(), dataDir: settingsDir(), overlays: { spawnAgent: (p: any) => overlays.spawnAgent(p), captureWithoutOverlays: (fn: () => Promise<any>) => companion ? companion.withoutWindow(() => overlays.captureWithoutOverlays(fn)) : overlays.captureWithoutOverlays(fn), pickRegion: (opts: any) => regionEditor.pick(opts) }, pingIds: reverse });
   const mcp = { command: process.execPath, args: [join(root, 'ai/mcp.mjs')], env: { ELECTRON_RUN_AS_NODE: '1', LOLPINGAI_ENDPOINT: '', LOLPINGAI_TOKEN: '' } };
   const bundledCodex = '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex';
   const skillDir = join(settingsDir(), '.agents/skills/lolping-your-ai');
@@ -92,5 +94,5 @@ export async function startTeammate(overlays: OverlayManager, library: EmoteLibr
   powerMonitor.on('lock-screen', () => { service.generation++; void Promise.all([service.stop(), iconJob.cancel()]).catch((e: Error) => service.notice(e.message)); });
   globalShortcut.register('Control+Alt+Escape', () => { service.generation++; void Promise.all([service.stop(), iconJob.cancel()]).then(() => service.notice('Stopped.')).catch((e: Error) => service.notice(e.message)); });
   if (!service.config.setupComplete) openSettingsWindow('teammate');
-  return { service, open: () => openSettingsWindow('teammate'), close: () => { clearInterval(timer); clearTimeout(changeTimer); companion?.close(); iconJob.close(); bridge.close(); service.close(); globalShortcut.unregister('Control+Alt+Escape'); } };
+  return { service, open: () => openSettingsWindow('teammate'), close: () => { clearInterval(timer); clearTimeout(changeTimer); regionEditor.close(); companion?.close(); iconJob.close(); bridge.close(); service.close(); globalShortcut.unregister('Control+Alt+Escape'); } };
 }

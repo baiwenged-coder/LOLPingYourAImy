@@ -12,21 +12,27 @@ export function bitmapLayout(nativeImage) {
   } catch { return null; }
 }
 
-export async function focusImage(image, extract, valid, padding, size, layout) {
+/** `out` is `{ width, height, scale }`: the output canvas and the resampling factor. */
+export async function focusImage(image, extract, valid, padding, out, layout) {
+  const scale = out.scale ?? 1;
+  const outWidth = Math.max(1, Math.round(out.width));
+  const outHeight = Math.max(1, Math.round(out.height));
+  const resizeWidth = Math.max(1, Math.round(valid.width * scale));
+  const resizeHeight = Math.max(1, Math.round(valid.height * scale));
   let input;
   if (layout === 'bgra' || layout === 'rgba') {
     const { width, height } = image.getSize(), bitmap = image.toBitmap();
     if (bitmap.length === width * height * 4) {
       const crop = Buffer.allocUnsafe(extract.width * extract.height * 4);
       let opaque = true;
-      for (let y = 0, out = 0; y < extract.height && opaque; y++) {
+      for (let y = 0, out2 = 0; y < extract.height && opaque; y++) {
         let source = ((extract.top + y) * width + extract.left) * 4;
-        for (let x = 0; x < extract.width; x++, source += 4, out += 4) {
+        for (let x = 0; x < extract.width; x++, source += 4, out2 += 4) {
           if (bitmap[source + 3] !== 255) { opaque = false; break; }
-          crop[out] = bitmap[source + (layout === 'bgra' ? 2 : 0)];
-          crop[out + 1] = bitmap[source + 1];
-          crop[out + 2] = bitmap[source + (layout === 'bgra' ? 0 : 2)];
-          crop[out + 3] = 255;
+          crop[out2] = bitmap[source + (layout === 'bgra' ? 2 : 0)];
+          crop[out2 + 1] = bitmap[source + 1];
+          crop[out2 + 2] = bitmap[source + (layout === 'bgra' ? 0 : 2)];
+          crop[out2 + 3] = 255;
         }
       }
       // Avoid full-window PNG encode/decode. Do not guess alpha premultiplication.
@@ -34,8 +40,13 @@ export async function focusImage(image, extract, valid, padding, size, layout) {
     }
   }
   input ??= sharp(image.toPNG()).extract(extract);
-  const cropped = await input.resize(valid.width, valid.height).raw().toBuffer({ resolveWithObject: true });
-  return sharp({ create: { width: size, height: size, channels: 4, background: '#151922' } })
-    .composite([{ input: cropped.data, raw: { width: cropped.info.width, height: cropped.info.height, channels: cropped.info.channels }, left: padding.left, top: padding.top }])
+  const cropped = await input.resize(resizeWidth, resizeHeight).raw().toBuffer({ resolveWithObject: true });
+  return sharp({ create: { width: outWidth, height: outHeight, channels: 4, background: '#151922' } })
+    .composite([{
+      input: cropped.data,
+      raw: { width: cropped.info.width, height: cropped.info.height, channels: cropped.info.channels },
+      left: Math.round(padding.left * scale),
+      top: Math.round(padding.top * scale),
+    }])
     .png().toBuffer();
 }

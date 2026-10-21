@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { squareRegion, anchoredPoint, windowAnchor } from '../geometry.mjs';
+import { rectRegion, squareRegion, anchoredPoint, windowAnchor } from '../geometry.mjs';
 import { validateConfig } from '../config.mjs';
 import { ActionGate } from '../gate.mjs';
 import { Wards } from '../wards.mjs';
@@ -10,6 +10,18 @@ test('square crops retain padding and negative monitor coordinates at 2x DPI', (
   assert.deepEqual(r.valid, { x: -1024, y: 0, width: 280, height: 266 });
   assert.deepEqual(r.padding, { left: 232, top: 246 });
   assert.equal(r.width, 512); assert.equal(r.scaleFactor, 2);
+});
+
+test('矩形取景支持反向拖拽并裁剪到显示器边界', () => {
+  const display = { x: 0, y: 0, width: 1000, height: 800, scaleFactor: 1 };
+  const reversed = rectRegion({ x: 900, y: 700, width: -700, height: -600 }, display);
+  assert.deepEqual({ x: reversed.x, y: reversed.y, width: reversed.width, height: reversed.height }, { x: 200, y: 100, width: 700, height: 600 });
+  assert.deepEqual(reversed.valid, { x: 200, y: 100, width: 700, height: 600 });
+  assert.deepEqual(reversed.padding, { left: 0, top: 0 });
+
+  const clipped = rectRegion({ x: -100, y: -50, width: 200, height: 100 }, display);
+  assert.deepEqual(clipped.valid, { x: 0, y: 0, width: 100, height: 50 });
+  assert.deepEqual(clipped.padding, { left: 100, top: 50 });
 });
 
 test('window anchors track moved and resized windows', () => {

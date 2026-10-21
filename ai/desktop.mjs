@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { bitmapLayout, focusImage } from './capture-image.mjs';
-import { squareRegion, windowAnchor, anchoredPoint } from './geometry.mjs';
+import { rectRegion, squareRegion, windowAnchor, anchoredPoint } from './geometry.mjs';
 const windowKey = target => `${target.pid}:${target.processStartedAt ?? ''}:${target.id}:${target.windowToken ?? ''}`;
 
 export class Desktop {
@@ -44,22 +44,51 @@ export class Desktop {
   }
   async resolve(target) { return this.normalizeWindow(await this.native('resolve', { id: target.id, pid: target.pid, processStartedAt: target.processStartedAt, ...(target.windowToken ? { windowToken: target.windowToken } : {}) })); }
   async locate(point) { return windowAnchor(this.normalizeWindow(await this.native('target', this.toNativePoint(point))), point); }
-  capture(pointOrTarget, size, tracked = false) {
-    const job = this.captureTail.then(() => this.captureNow(pointOrTarget, size, tracked));
+  capture(pointOrTarget, spec, tracked = false) {
+    const job = this.captureTail.then(() => this.captureNow(pointOrTarget, spec, tracked));
     this.captureTail = job.catch(() => {}); return job;
   }
-  async captureNow(pointOrTarget, size, tracked) {
+  async captureNow(pointOrTarget, spec, tracked) {
     if (!await this.available()) throw new Error('Screen recording permission is missing or desktop is locked');
     if (!pointOrTarget) throw new Error('No target has been selected');
     const { screen, desktopCapturer } = this.electron;
+    const rect = typeof spec === 'object' && spec !== null && Number.isFinite(spec.width) && Number.isFinite(spec.height);
+    const anchor = rect ? { x: spec.x + spec.width / 2, y: spec.y + spec.height / 2 } : pointOrTarget;
     let target, point;
-    if (tracked) { const w = await this.resolve(pointOrTarget); target = { ...w, relative: pointOrTarget.relative }; point = anchoredPoint(target, w.bounds); }
-    else { point = pointOrTarget; const w = this.normalizeWindow(await this.native('target', this.toNativePoint(point))); target = windowAnchor(w, point); }
+    if (tracked) { const w = await this.resolve(pointOrTarget); target = { ...w, relative: pointOrTarget.relative }; point = rect ? anchor : anchoredPoint(target, w.bounds); }
+    else { point = anchor; const w = this.normalizeWindow(await this.native('target', this.toNativePoint(point))); target = windowAnchor(w, point); }
     const verification = this.keyVerification.get(windowKey(target));
     const canVerify = verification?.settled;
     const display = screen.getDisplayNearestPoint({ x: Math.round(point.x), y: Math.round(point.y) });
-    const region = squareRegion(point, size, { ...display.bounds, scaleFactor: display.scaleFactor });
+    const region = rect ? rectRegion(spec, { ...display.bounds, scaleFactor: display.scaleFactor }) : squareRegion(point, spec, { ...display.bounds, scaleFactor: display.scaleFactor });
+    const maxSide = 1024;
+    const outScale = Math.min(1, maxSide / Math.max(region.width, region.height));
+    const out = { width: Math.max(1, Math.round(region.width * outScale)), height: Math.max(1, Math.round(region.height * outScale)), scale: outScale };
     const png = await this.overlays.captureWithoutOverlays(async () => {
+      // A rectangle is an exact screen crop: the user drew it, so it must not
+      // be clipped to the target window (that made the image start at a window
+      // edge instead of the mouse-down corner).
+      if (rect) {
+        const sources = await desktopCapturer.getSources({
+          types: ['screen'],
+          thumbnailSize: { width: Math.round(display.bounds.width * display.scaleFactor), height: Math.round(display.bounds.height * display.scaleFactor) },
+        });
+        const source = sources.find(s => s.display_id === String(display.id)) ?? sources[0];
+        if (!source || source.thumbnail.isEmpty()) throw new Error('No screenshot for this display');
+        const image = source.thumbnail, actual = image.getSize();
+        const sx = actual.width / display.bounds.width, sy = actual.height / display.bounds.height;
+        const extract = {
+          left: Math.max(0, Math.round((region.valid.x - display.bounds.x) * sx)),
+          top: Math.max(0, Math.round((region.valid.y - display.bounds.y) * sy)),
+          width: Math.round(region.valid.width * sx),
+          height: Math.round(region.valid.height * sy),
+        };
+        extract.width = Math.min(extract.width, actual.width - extract.left);
+        extract.height = Math.min(extract.height, actual.height - extract.top);
+        if (extract.width < 1 || extract.height < 1) throw new Error('Target region is outside the display');
+        region.captureKind = 'display';
+        return focusImage(image, extract, region.valid, region.padding, out, this.bitmapLayout);
+      }
       // Capture the identified window, including when our settings cover it. A
       // screen image can otherwise describe a different window than the metadata.
       const captureBounds = target.bounds;
@@ -79,9 +108,9 @@ export class Desktop {
       const extract = { left: Math.max(0, Math.round((region.valid.x - captureBounds.x) * sx)), top: Math.max(0, Math.round((region.valid.y - captureBounds.y) * sy)), width: Math.round(region.valid.width * sx), height: Math.round(region.valid.height * sy) };
       extract.width = Math.min(extract.width, actual.width - extract.left); extract.height = Math.min(extract.height, actual.height - extract.top);
       if (extract.width < 1 || extract.height < 1) throw new Error('Target region is outside the display');
-      return focusImage(image, extract, region.valid, region.padding, size, this.bitmapLayout);
+      return focusImage(image, extract, region.valid, region.padding, out, this.bitmapLayout);
     });
-    region.imageScale = 1; region.imageWidth = size; region.imageHeight = size;
+    region.imageScale = out.scale; region.imageWidth = out.width; region.imageHeight = out.height;
     const dir = join(this.dataDir, 'captures'); await mkdir(dir, { recursive: true, mode: 0o700 });
     const imagePath = join(dir, `ping-${Date.now()}-${randomUUID()}.png`); await writeFile(imagePath, png, { mode: 0o600 });
     // Keep a bounded local diagnostic history; never delete the just-captured image.

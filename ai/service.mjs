@@ -193,15 +193,39 @@ export class Teammate extends EventEmitter {
     await Promise.all(Object.values(this.adapters).flatMap(a => [...a.active.keys()].map(id => a.cancel(id))));
     await this.gate.idle(); this.phase('stopped');
   }
+  /** Desktop pings need a user-drawn rectangle; interrupt/ward/emote/chat paths do not. */
+  needsRegionEditor(event, signal) {
+    if (event.source === 'timer' || event.observeOnly) return false;
+    if (!event.point) return false;
+    return ['explore', 'execute', 'observe'].includes(signal.mode);
+  }
+
   async process(event, signal) {
     const current = () => { if (event.generation !== this.generation) throw new Error('Ping superseded by stop or correction'); };
     const harness = event.harness ?? this.config.harness, adapter = this.adapters[harness];
     if (!adapter) throw new Error('Harness is unavailable');
     const previous = this.sessions[harness];
     current(); this.gate.pause();
+    let rect;
+    if (this.needsRegionEditor(event, signal) && this.desktop.overlays?.pickRegion) {
+      try {
+        rect = await this.desktop.overlays.pickRegion({ point: event.point, minSize: 32 });
+      } catch (error) {
+        this.notice(`Region selection failed: ${error.message}`);
+      }
+      if (rect === null) {
+        this.notice('Region selection cancelled');
+        return { cancelled: true };
+      }
+    }
+    current();
+    // Do not show the "received" reply card until the user has confirmed the
+    // region: the card sits over the target window and was mistaken for the
+    // selection rectangle while the editor was open.
     this.task = { id: event.id, replyId: this.conversation.add({ role: 'agent', kind: 'text', harness, contextId: event.id, text: '', phase: 'received' }).id, phase: 'received', mode: signal.mode, signal: event.signal, point: event.point, target: event.target, text: '', startedAt: this.now(), timings: { receivedAt: event.receivedAt, queueMs: this.now() - event.receivedAt } }; this.emit('change');
     let stageStarted = this.now();
-    const capture = signal.mode === 'chat' ? {} : signal.mode === 'emotion' ? { target: event.target ?? (this.desktop.locate ? await this.desktop.locate(event.point) : (await this.desktop.capture(event.point, this.config.regionSize)).target) } : await this.desktop.capture(event.target ?? event.point, this.config.regionSize, Boolean(event.target));
+    const spec = rect ?? this.config.regionSize;
+    const capture = signal.mode === 'chat' ? {} : signal.mode === 'emotion' ? { target: event.target ?? (this.desktop.locate ? await this.desktop.locate(event.point) : (await this.desktop.capture(event.point, this.config.regionSize)).target) } : await this.desktop.capture(event.target ?? event.point, spec, Boolean(event.target));
     this.task.timings.captureMs = this.now() - stageStarted; stageStarted = this.now();
     current(); event.target = capture.target; this.task.target = capture.target; this.phase('understanding');
     const context = this.context = { id: event.id, source: event.source, signal: event.signal, mode: signal.mode, expression: { count: event.repeatCount }, time: this.now(), harness, ...capture, config: this.config };

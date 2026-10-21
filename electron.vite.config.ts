@@ -28,6 +28,7 @@ export default defineConfig({
         input: {
           overlay: resolve('src/renderer/overlay/index.html'),
           companion: resolve('src/renderer/companion/index.html'),
+          'region-editor': resolve('src/renderer/region-editor/index.html'),
           settings: resolve('src/renderer/settings/index.html'),
         },
       },
